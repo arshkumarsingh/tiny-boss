@@ -27,11 +27,37 @@ pip install -e .
 ### CLI
 
 ```bash
-tiny-boss \
-  --worker groq/llama-3.1-8b-instant \
-  --supervisor deepseek/deepseek-v4-pro \
-  --task "Summarize the key findings" \
-  --context paper.txt
+# One-time setup: create config with your defaults
+tiny-boss init
+# Edit ~/.config/tiny-boss/config.toml if needed
+
+# Then just:
+tiny-boss --task "Summarize the key findings" --context paper.txt
+
+# Pipe context, quiet output:
+cat paper.txt | tiny-boss --task "What methodology?" --quiet
+
+# Real-time progress:
+tiny-boss -t "Extract entities" -c doc.txt --progress
+```
+
+**Full CLI reference:**
+
+| Flag | Description |
+|------|-------------|
+| `--task`, `-t` | Question/task (required) |
+| `--context`, `-c` | File path(s) or stdin |
+| `--worker`, `-w` | `provider/model` (uses config default) |
+| `--supervisor`, `-s` | `provider/model` (uses config default) |
+| `--max-rounds`, `-r` | Protocol rounds (default: 3) |
+| `--progress`, `-p` | Show real-time round progress |
+| `--quiet`, `-q` | Only print final answer |
+| `--json` | Full result as JSON |
+| `--verbose`, `-v` | Full protocol trace |
+
+```bash
+tiny-boss init      # Create config file with defaults
+tiny-boss --config  # Show current configuration
 ```
 
 ### Python
