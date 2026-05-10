@@ -33,21 +33,6 @@ from tiny_boss.clients import get_client
 from tiny_boss.protocol import TinyBoss
 
 
-# ── Protocol prompt (for final streaming call) ──
-
-FINAL_STREAM_PROMPT = """You are a supervisor. Answer the task based on the worker's response.
-
-<task>
-{task}
-</task>
-
-<worker_response>
-{worker_response}
-</worker_response>
-
-Provide a complete, well-structured answer."""
-
-
 class BossProxy:
     """Thread-safe singleton wrapping TinyBoss."""
 
@@ -80,31 +65,18 @@ class BossProxy:
         return result.final_answer
 
     def chat_stream(self, messages: list):
-        """Run protocol, then stream final supervisor answer token-by-token."""
+        """Run protocol, then stream the answer token-by-token (no extra API call)."""
         task, context = self._parse_messages(messages)
 
         with self._lock:
-            # Run protocol to get the worker's distilled answer
             boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
             result = boss(task=task, context=context)
 
-            # If worker was involved, stream a final polished answer
-            if result.worker_messages:
-                worker_summary = result.final_answer
-                prompt = FINAL_STREAM_PROMPT.format(task=task, worker_response=worker_summary)
-            else:
-                # Supervisor answered directly — nothing to re-stream, just yield
-                yield result.final_answer
-                return
-
-            # Stream the supervisor's polished answer
-            try:
-                for token in self.supervisor.stream(prompt):
-                    yield token
-            except (AttributeError, NotImplementedError):
-                # Fallback: supervisor doesn't support streaming
-                resp, _ = self.supervisor(prompt)
-                yield resp
+            # Yield the answer already produced by the protocol
+            # Break into word-sized chunks for a streaming feel
+            words = result.final_answer.split(" ")
+            for i, word in enumerate(words):
+                yield word + (" " if i < len(words) - 1 else "")
 
 
 class Handler(BaseHTTPRequestHandler):
