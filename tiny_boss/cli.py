@@ -2,7 +2,6 @@
 
 import sys
 import json
-import os
 import argparse
 from pathlib import Path
 
@@ -52,9 +51,9 @@ def _resolve_spec(arg_val: str | None, config_val: str | None, name: str) -> str
     if config_val:
         return config_val
     print(f"\n  No {name} specified.", file=sys.stderr)
-    print(f"  Run 'tiny-boss init' to create a config file, or use:", file=sys.stderr)
+    print("  Run 'tiny-boss init' to create a config file, or use:", file=sys.stderr)
     print(f"    tiny-boss --{name} provider/model ...", file=sys.stderr)
-    print(f"\n  Example:", file=sys.stderr)
+    print("\n  Example:", file=sys.stderr)
     print(f"    tiny-boss --{name} groq/llama-3.1-8b-instant ...\n", file=sys.stderr)
     sys.exit(1)
 
@@ -68,7 +67,7 @@ def _progress_callback(role: str, message: str):
         else:
             print(f"    → {message[:120].strip()}", file=sys.stderr)
     elif role == "FINAL":
-        print(f"  ✓ Done.", file=sys.stderr)
+        print("  ✓ Done.", file=sys.stderr)
     # SUPERVISOR messages are verbose JSON — skip
 
 
@@ -114,9 +113,11 @@ Keys auto-loaded from ~/.hermes/.env
 
     # --init
     if args.init:
-        _ensure_config()
-        print(f"Config created at {CONFIG_FILE}")
-        print(f"\nEdit it to set your defaults:\n")
+        if not CONFIG_FILE.exists():
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            CONFIG_FILE.write_text(DEFAULT_CONFIG)
+        print("Config created: {}".format(CONFIG_FILE))
+        print("\nEdit it to set your defaults:\n")
         with open(CONFIG_FILE) as f:
             print(f.read())
         return
