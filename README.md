@@ -139,7 +139,8 @@ systemctl --user enable --now tiny-boss
 | `groq` | `GROQ_API_KEY` | Yes | `llama-3.1-8b-instant`, `llama-3.3-70b-versatile` |
 | `deepseek` | `DEEPSEEK_API_KEY` | No (~$0.27/M) | `deepseek-chat`, `deepseek-v4-pro` |
 | `gemini` | `GEMINI_API_KEY` | Yes | `gemini-2.0-flash`, `gemini-2.5-pro-exp-03-25` |
-| `openai` | `OPENAI_API_KEY` | No | `gpt-4o`, `gpt-4o-mini` |
+| `openai` | `OPENAI_API_KEY` | No | `gpt-5.5`, `gpt-4o-mini` |
+| `anthropic` | `ANTHROPIC_API_KEY` | No | `claude-sonnet-4-6-20250514`, `claude-opus-4-7-20250514` |
 | `openrouter` | `OPENROUTER_API_KEY` | Some free | `google/gemma-3-4b-it:free`, `anthropic/claude-sonnet-4` |
 
 Add more by using `get_client("openai", model, base_url="...", api_key="...")` for any OpenAI-compatible endpoint.

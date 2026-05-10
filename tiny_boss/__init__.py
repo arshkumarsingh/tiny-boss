@@ -5,6 +5,7 @@ from .clients import (
     GroqClient,
     DeepSeekClient,
     OpenRouterClient,
+    AnthropicClient,
     get_client,
 )
 from .protocol import TinyBoss, BossResult

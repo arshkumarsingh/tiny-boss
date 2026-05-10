@@ -127,6 +127,44 @@ class OpenRouterClient(OpenAIClient):
                          base_url="https://openrouter.ai/api/v1")
 
 
+# ── Anthropic (native SDK) ──
+
+class AnthropicClient(LLMClient):
+    """Anthropic Claude via native SDK. Set ANTHROPIC_API_KEY."""
+
+    def __init__(self, provider: str, model: str, api_key: Optional[str] = None):
+        super().__init__(provider, model)
+        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not self.api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not set. Get one: https://console.anthropic.com/"
+            )
+
+    def __call__(self, prompt: str, system: str = "") -> tuple[str, dict]:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self.api_key)
+        kwargs = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "temperature": 0.1,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+
+        resp = client.messages.create(**kwargs)
+        text = "".join(
+            block.text for block in resp.content
+            if hasattr(block, "text")
+        )
+        usage = {
+            "prompt_tokens": resp.usage.input_tokens if resp.usage else 0,
+            "completion_tokens": resp.usage.output_tokens if resp.usage else 0,
+        }
+        return text, usage
+
+
 # ── Factory ──
 
 _PROVIDER_MAP = {
@@ -135,6 +173,7 @@ _PROVIDER_MAP = {
     "deepseek": DeepSeekClient,
     "gemini": GeminiClient,
     "openrouter": OpenRouterClient,
+    "anthropic": AnthropicClient,
 }
 
 
