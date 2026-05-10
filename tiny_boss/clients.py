@@ -24,6 +24,21 @@ if _ENV_FILE.exists():
                     os.environ[key] = val
 
 
+def _retry(fn, max_attempts: int = 3, base_delay: float = 1.0):
+    """Call fn() with exponential backoff on transient errors."""
+    import time as _time
+    last = None
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if attempt < max_attempts - 1:
+                delay = base_delay * (2 ** attempt)
+                _time.sleep(delay)
+    raise last
+
+
 class LLMClient:
     """Callable that returns (text, usage_dict)."""
 
@@ -44,30 +59,38 @@ class OpenAIClient(LLMClient):
     """Any OpenAI-compatible endpoint."""
 
     def __init__(self, provider: str, model: str,
-                 api_key: Optional[str] = None, base_url: Optional[str] = None):
+                 api_key: Optional[str] = None, base_url: Optional[str] = None,
+                 temperature: float = 0.1, max_tokens: int = 4096):
         super().__init__(provider, model)
         self.api_key = api_key or os.environ.get(f"{provider.upper()}_API_KEY", "")
         self.base_url = base_url
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self._client = None
+
+    def _get_client(self):
+        """Lazy-init and cache the OpenAI client."""
+        if self._client is None:
+            from openai import OpenAI
+            kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self._client = OpenAI(**kwargs)
+        return self._client
 
     def __call__(self, prompt: str, system: str = "") -> tuple[str, dict]:
-        from openai import OpenAI
-
-        kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            kwargs["base_url"] = self.base_url
-
-        client = OpenAI(**kwargs)
+        client = self._get_client()
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        resp = client.chat.completions.create(
+        resp = _retry(lambda: client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.1,
-            max_tokens=4096,
-        )
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        ))
 
         text = resp.choices[0].message.content or ""
         usage = {
@@ -78,13 +101,7 @@ class OpenAIClient(LLMClient):
 
     def stream(self, prompt: str, system: str = "") -> "Generator[str, None, None]":
         """Yield tokens one at a time via streaming."""
-        from openai import OpenAI
-
-        kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            kwargs["base_url"] = self.base_url
-
-        client = OpenAI(**kwargs)
+        client = self._get_client()
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -93,8 +110,8 @@ class OpenAIClient(LLMClient):
         stream = client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.1,
-            max_tokens=4096,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
             stream=True,
         )
         for chunk in stream:
@@ -108,9 +125,13 @@ class OpenAIClient(LLMClient):
 class GeminiClient(LLMClient):
     """Google Gemini via google-generativeai SDK."""
 
-    def __init__(self, model: str, api_key: Optional[str] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None,
+                 temperature: float = 0.1, max_tokens: int = 4096):
         super().__init__("gemini", model)
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self._client = None
         if not self.api_key:
             raise ValueError(
                 "GEMINI_API_KEY not set. Get one: https://aistudio.google.com/apikey"
@@ -119,13 +140,19 @@ class GeminiClient(LLMClient):
     def __call__(self, prompt: str, system: str = "") -> tuple[str, dict]:
         import google.generativeai as genai
 
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(
+        if self._client is None:
+            genai.configure(api_key=self.api_key)
+            self._client = genai
+
+        model = self._client.GenerativeModel(
             model_name=self.model,
-            generation_config={"temperature": 0.1, "max_output_tokens": 4096},
+            generation_config={
+                "temperature": self.temperature,
+                "max_output_tokens": self.max_tokens,
+            },
             system_instruction=system if system else None,
         )
-        resp = model.generate_content(prompt)
+        resp = _retry(lambda: model.generate_content(prompt))
         text = resp.text or ""
         usage = {
             "prompt_tokens": resp.usage_metadata.prompt_token_count if resp.usage_metadata else 0,
@@ -159,28 +186,33 @@ class OpenRouterClient(OpenAIClient):
 class AnthropicClient(LLMClient):
     """Anthropic Claude via native SDK. Set ANTHROPIC_API_KEY."""
 
-    def __init__(self, model: str, api_key: Optional[str] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None,
+                 temperature: float = 0.1, max_tokens: int = 4096):
         super().__init__("anthropic", model)
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self._client = None
         if not self.api_key:
             raise ValueError(
                 "ANTHROPIC_API_KEY not set. Get one: https://console.anthropic.com/"
             )
 
     def __call__(self, prompt: str, system: str = "") -> tuple[str, dict]:
-        import anthropic
+        if self._client is None:
+            import anthropic
+            self._client = anthropic.Anthropic(api_key=self.api_key)
 
-        client = anthropic.Anthropic(api_key=self.api_key)
         kwargs = {
             "model": self.model,
-            "max_tokens": 4096,
-            "temperature": 0.1,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
         if system:
             kwargs["system"] = system
 
-        resp = client.messages.create(**kwargs)
+        resp = _retry(lambda: self._client.messages.create(**kwargs))
         text = "".join(
             block.text for block in resp.content
             if hasattr(block, "text")

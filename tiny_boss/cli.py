@@ -161,9 +161,18 @@ Keys auto-loaded from ~/.hermes/.env
 
     # Context
     if args.context:
-        ctx = "\n\n".join(Path(p).read_text() for p in args.context if Path(p).is_file())
+        ctx_parts = []
+        for p in args.context:
+            path = Path(p)
+            if path.is_file():
+                ctx_parts.append(path.read_text(encoding="utf-8"))
+        ctx = "\n\n".join(ctx_parts)
     else:
         ctx = sys.stdin.read()
+
+    if not ctx.strip():
+        print("\n  Error: No context provided. Use --context <file> or pipe input.\n", file=sys.stderr)
+        sys.exit(1)
 
     if not args.quiet:
         print(f"Worker: {worker}  |  Supervisor: {supervisor}", file=sys.stderr)

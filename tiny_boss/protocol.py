@@ -45,6 +45,10 @@ SUPERVISOR_SYNTHESIS = """You are a supervisor synthesizing worker responses.
 {task}
 </task>
 
+<prior_rounds>
+{prior_rounds}
+</prior_rounds>
+
 <worker_response>
 {worker_response}
 </worker_response>
@@ -55,7 +59,7 @@ SUPERVISOR_SYNTHESIS = """You are a supervisor synthesizing worker responses.
 
 Output JSON:
 {{
-    "analysis": "what you learned, what's still missing",
+    "analysis": "what you learned across all rounds, what's still missing",
     "question": "follow-up question (empty if done)",
     "final_answer": "complete answer if done, otherwise empty",
     "decision": "ask_worker or provide_final_answer"
@@ -67,13 +71,17 @@ SUPERVISOR_FINAL = """FINAL round. You MUST answer now.
 {task}
 </task>
 
+<prior_rounds>
+{prior_rounds}
+</prior_rounds>
+
 <worker_response>
 {worker_response}
 </worker_response>
 
 Output JSON:
 {{
-    "analysis": "synthesis of all responses",
+    "analysis": "synthesis of all responses across rounds",
     "final_answer": "complete, well-structured answer",
     "decision": "provide_final_answer"
 }}"""
@@ -204,6 +212,7 @@ class TinyBoss:
 
         # Rounds 1..N
         for r in range(1, rounds + 1):
+            w_errors = 0  # reset per round — track consecutive failures only
             question = parsed.get("question", "Analyze the context.")
 
             self._log(f"WORKER r{r}", f"Q: {question[:200]}...")
@@ -225,13 +234,21 @@ class TinyBoss:
 
             # Supervisor synthesizes
             remaining = rounds - r
-            self._log("SUPERVISOR", f"Synthesizing ({remaining} rounds left)...")
+            self._log("SUPERVISOR", "Synthesizing ({} rounds left)...".format(remaining))
+
+            prior = "\n".join(
+                "Q: {}\nA: {}".format(wm["question"], wm["response"][:500])
+                for wm in w_msgs[:-1]  # exclude current round
+            ) or "(no prior rounds)"
 
             if remaining == 0:
-                sp = SUPERVISOR_FINAL.format(task=task, worker_response=w_resp)
+                sp = SUPERVISOR_FINAL.format(
+                    task=task, prior_rounds=prior, worker_response=w_resp
+                )
             else:
                 sp = SUPERVISOR_SYNTHESIS.format(
-                    task=task, worker_response=w_resp, rounds_remaining=remaining
+                    task=task, prior_rounds=prior,
+                    worker_response=w_resp, rounds_remaining=remaining
                 )
 
             t = time.time()
