@@ -119,6 +119,7 @@ class BossResult:
     timing: dict = field(default_factory=dict)
     worker_tokens: int = 0
     supervisor_tokens: int = 0
+    errors: list = field(default_factory=list)
 
 
 # ── Core ─────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ class TinyBoss:
 
         s_msgs, w_msgs = [], []
         w_tok = s_tok = 0
+        w_errors = 0
         t0 = time.time()
         timings = {}
 
@@ -172,10 +174,22 @@ class TinyBoss:
         self._log("SUPERVISOR", "Analyzing task...")
         prompt = SUPERVISOR_INITIAL.format(task=task, max_rounds=rounds)
         t = time.time()
-        resp, usage = self.supervisor(prompt)
+        try:
+            resp, usage = self.supervisor(prompt)
+        except Exception as e:
+            return BossResult(
+                final_answer=f"Supervisor unavailable: {e}",
+                supervisor_messages=s_msgs, worker_messages=w_msgs,
+                timing={"total": time.time() - t0, **timings},
+                worker_tokens=w_tok, supervisor_tokens=s_tok,
+                errors=[f"supervisor_init: {e}"],
+            )
         timings["s_init"] = time.time() - t
         s_tok += usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
-        parsed = _extract_json(resp)
+        try:
+            parsed = _extract_json(resp)
+        except ValueError:
+            parsed = {"decision": "provide_final_answer", "final_answer": resp}
         s_msgs.append(parsed)
         self._log("SUPERVISOR", json.dumps(parsed, indent=2))
 
@@ -194,7 +208,15 @@ class TinyBoss:
             self._log(f"WORKER r{r}", f"Q: {question[:200]}...")
             wp = WORKER_PROMPT.format(context=ctx, question=question)
             t = time.time()
-            w_resp, wu = self.worker(wp)
+            try:
+                w_resp, wu = self.worker(wp)
+            except Exception as e:
+                w_errors += 1
+                w_resp = f"[Worker unavailable: {e}]"
+                wu = {"prompt_tokens": 0, "completion_tokens": 0}
+                if w_errors >= 2:
+                    # Worker failed twice — supervisor answers directly
+                    w_resp = "[Worker unavailable after retries. Answer from your own knowledge.]"
             timings[f"w_r{r}"] = time.time() - t
             w_tok += wu.get("prompt_tokens", 0) + wu.get("completion_tokens", 0)
             w_msgs.append({"question": question, "response": w_resp})
@@ -212,10 +234,24 @@ class TinyBoss:
                 )
 
             t = time.time()
-            s_resp, su = self.supervisor(sp)
+            try:
+                s_resp, su = self.supervisor(sp)
+            except Exception as e:
+                # Supervisor failed mid-protocol — return what we have
+                return BossResult(
+                    final_answer=w_resp,
+                    supervisor_messages=s_msgs, worker_messages=w_msgs,
+                    rounds_used=r,
+                    timing={"total": time.time() - t0, **timings},
+                    worker_tokens=w_tok, supervisor_tokens=s_tok,
+                    errors=[f"supervisor_r{r}: {e}"],
+                )
             timings[f"s_r{r}"] = time.time() - t
             s_tok += su.get("prompt_tokens", 0) + su.get("completion_tokens", 0)
-            parsed = _extract_json(s_resp)
+            try:
+                parsed = _extract_json(s_resp)
+            except ValueError:
+                parsed = {"decision": "provide_final_answer", "final_answer": s_resp}
             s_msgs.append(parsed)
             self._log("SUPERVISOR", json.dumps(parsed, indent=2))
 
@@ -238,4 +274,5 @@ class TinyBoss:
             rounds_used=rounds,
             timing={"total": time.time() - t0, **timings},
             worker_tokens=w_tok, supervisor_tokens=s_tok,
+            errors=[f"max_rounds ({rounds}) exhausted"] if rounds > 1 else [],
         )
