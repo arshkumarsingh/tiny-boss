@@ -4,6 +4,9 @@ Tiny Boss → Hermes Agent proxy.
 Starts an OpenAI-compatible HTTP server. Each /v1/chat/completions request
 goes through the tiny-boss protocol: worker reads context, supervisor guides.
 
+Supports streaming (stream=true) — protocol runs synchronously,
+then the final supervisor answer streams token-by-token via SSE.
+
 Usage:
   tiny-boss-proxy --worker groq/llama-3.1-8b-instant --supervisor deepseek/deepseek-v4-pro
 
@@ -30,6 +33,21 @@ from tiny_boss.clients import get_client
 from tiny_boss.protocol import TinyBoss
 
 
+# ── Protocol prompt (for final streaming call) ──
+
+FINAL_STREAM_PROMPT = """You are a supervisor. Answer the task based on the worker's response.
+
+<task>
+{task}
+</task>
+
+<worker_response>
+{worker_response}
+</worker_response>
+
+Provide a complete, well-structured answer."""
+
+
 class BossProxy:
     """Thread-safe singleton wrapping TinyBoss."""
 
@@ -42,7 +60,7 @@ class BossProxy:
         print(f"Worker:     {self.worker}", file=sys.stderr)
         print(f"Supervisor: {self.supervisor}", file=sys.stderr)
 
-    def chat(self, messages: list) -> str:
+    def _parse_messages(self, messages: list) -> tuple[str, str]:
         system_parts, user_parts = [], []
         for msg in messages:
             content = msg.get("content", "")
@@ -52,11 +70,41 @@ class BossProxy:
 
         task = user_parts[-1] if user_parts else "Process."
         context = "\n\n".join(system_parts + user_parts[:-1]) if len(user_parts) > 1 else (system_parts[0] if system_parts else "")
+        return task, context or "No context."
 
+    def chat(self, messages: list) -> str:
+        task, context = self._parse_messages(messages)
         with self._lock:
             boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
-            result = boss(task=task, context=context or "No context.")
+            result = boss(task=task, context=context)
         return result.final_answer
+
+    def chat_stream(self, messages: list):
+        """Run protocol, then stream final supervisor answer token-by-token."""
+        task, context = self._parse_messages(messages)
+
+        with self._lock:
+            # Run protocol to get the worker's distilled answer
+            boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
+            result = boss(task=task, context=context)
+
+            # If worker was involved, stream a final polished answer
+            if result.worker_messages:
+                worker_summary = result.final_answer
+                prompt = FINAL_STREAM_PROMPT.format(task=task, worker_response=worker_summary)
+            else:
+                # Supervisor answered directly — nothing to re-stream, just yield
+                yield result.final_answer
+                return
+
+            # Stream the supervisor's polished answer
+            try:
+                for token in self.supervisor.stream(prompt):
+                    yield token
+            except (AttributeError, NotImplementedError):
+                # Fallback: supervisor doesn't support streaming
+                resp, _ = self.supervisor(prompt)
+                yield resp
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -69,6 +117,50 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _sse(self, generator, model: str, rid: str):
+        """Send Server-Sent Events for streaming."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        try:
+            for token in generator:
+                chunk = json.dumps({
+                    "id": rid,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": token},
+                        "finish_reason": None,
+                    }],
+                })
+                self.wfile.write(f"data: {chunk}\n\n".encode())
+                self.wfile.flush()
+
+            # Final chunk
+            final = json.dumps({
+                "id": rid,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }],
+            })
+            self.wfile.write(f"data: {final}\n\n".encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except Exception as e:
+            err = json.dumps({"error": {"message": str(e), "type": "stream_error"}})
+            self.wfile.write(f"data: {err}\n\n".encode())
+            self.wfile.flush()
 
     def do_GET(self):
         if self.path == "/v1/models":
@@ -95,18 +187,22 @@ class Handler(BaseHTTPRequestHandler):
         if not messages:
             return self._json({"error": "no messages"}, 400)
 
+        stream = req.get("stream", False)
         rid = f"boss-{uuid.uuid4().hex[:8]}"
-        try:
-            start = time.time()
-            answer = self.proxy.chat(messages)
-            elapsed = time.time() - start
 
-            self._json({
-                "id": rid, "object": "chat.completion",
-                "created": int(time.time()), "model": "tiny-boss",
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            })
+        try:
+            if stream:
+                self._sse(self.proxy.chat_stream(messages), "tiny-boss", rid)
+            else:
+                start = time.time()
+                answer = self.proxy.chat(messages)
+
+                self._json({
+                    "id": rid, "object": "chat.completion",
+                    "created": int(time.time()), "model": "tiny-boss",
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                })
         except Exception as e:
             self._json({"error": {"message": str(e), "type": "boss_error"}}, 500)
 
@@ -126,7 +222,7 @@ def main():
     server = HTTPServer((args.host, args.port), Handler)
     print(f"\nListening on http://{args.host}:{args.port}", file=sys.stderr)
     print(f"  GET  /health", file=sys.stderr)
-    print(f"  POST /v1/chat/completions", file=sys.stderr)
+    print(f"  POST /v1/chat/completions  (stream=true supported)", file=sys.stderr)
     print(f"\nAdd to ~/.hermes/config.yaml:", file=sys.stderr)
     print(f"  tiny-boss:", file=sys.stderr)
     print(f"    name: Tiny Boss", file=sys.stderr)

@@ -74,6 +74,32 @@ class OpenAIClient(LLMClient):
         }
         return text, usage
 
+    def stream(self, prompt: str, system: str = "") -> "typing.Generator[str, None, None]":
+        """Yield tokens one at a time via streaming."""
+        from openai import OpenAI
+
+        kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            kwargs["base_url"] = self.base_url
+
+        client = OpenAI(**kwargs)
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        stream = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=4096,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                yield delta.content
+
 
 # ── Google Gemini ──
 
