@@ -24,14 +24,37 @@ if _ENV_FILE.exists():
                     os.environ[key] = val
 
 
+def _is_transient(exc: Exception) -> bool:
+    """Return True if this exception is worth retrying (rate limits, server errors)."""
+    type_name = type(exc).__name__
+    transient_names = {
+        "RateLimitError",
+        "APITimeoutError",
+        "APIConnectionError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        "OverloadedError",       # Anthropic 529
+        "ResourceExhausted",     # Google
+    }
+    if type_name in transient_names:
+        return True
+    # Catch generic HTTP 429 / 5xx surfaced as status-code errors
+    status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if isinstance(status, int) and (status == 429 or status >= 500):
+        return True
+    return False
+
+
 def _retry(fn, max_attempts: int = 3, base_delay: float = 1.0):
-    """Call fn() with exponential backoff on transient errors."""
+    """Call fn() with exponential backoff on transient errors only."""
     import time as _time
     last = None
     for attempt in range(max_attempts):
         try:
             return fn()
         except Exception as e:
+            if not _is_transient(e):
+                raise  # fail fast on config/auth/logic errors
             last = e
             if attempt < max_attempts - 1:
                 delay = base_delay * (2 ** attempt)
@@ -164,21 +187,21 @@ class GeminiClient(LLMClient):
 # ── Convenience subclasses with pre-configured base URLs ──
 
 class GroqClient(OpenAIClient):
-    def __init__(self, model: str, api_key: Optional[str] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
         super().__init__("groq", model, api_key=api_key,
-                         base_url="https://api.groq.com/openai/v1")
+                         base_url="https://api.groq.com/openai/v1", **kwargs)
 
 
 class DeepSeekClient(OpenAIClient):
-    def __init__(self, model: str, api_key: Optional[str] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
         super().__init__("deepseek", model, api_key=api_key,
-                         base_url="https://api.deepseek.com")
+                         base_url="https://api.deepseek.com", **kwargs)
 
 
 class OpenRouterClient(OpenAIClient):
-    def __init__(self, model: str, api_key: Optional[str] = None):
+    def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
         super().__init__("openrouter", model, api_key=api_key,
-                         base_url="https://openrouter.ai/api/v1")
+                         base_url="https://openrouter.ai/api/v1", **kwargs)
 
 
 # ── Anthropic (native SDK) ──

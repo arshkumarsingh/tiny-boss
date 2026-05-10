@@ -175,7 +175,6 @@ class TinyBoss:
 
         s_msgs, w_msgs = [], []
         w_tok = s_tok = 0
-        w_errors = 0
         t0 = time.time()
         timings = {}
 
@@ -212,25 +211,31 @@ class TinyBoss:
 
         # Rounds 1..N
         for r in range(1, rounds + 1):
-            w_errors = 0  # reset per round — track consecutive failures only
             question = parsed.get("question", "Analyze the context.")
 
-            self._log(f"WORKER r{r}", f"Q: {question[:200]}...")
+            self._log("WORKER r{}".format(r), "Q: {}...".format(question[:200]))
             wp = WORKER_PROMPT.format(context=ctx, question=question)
+
             t = time.time()
-            try:
-                w_resp, wu = self.worker(wp)
-            except Exception as e:
-                w_errors += 1
-                w_resp = f"[Worker unavailable: {e}]"
-                wu = {"prompt_tokens": 0, "completion_tokens": 0}
-                if w_errors >= 2:
-                    # Worker failed twice — supervisor answers directly
-                    w_resp = "[Worker unavailable after retries. Answer from your own knowledge.]"
-            timings[f"w_r{r}"] = time.time() - t
+            w_resp, wu = None, {"prompt_tokens": 0, "completion_tokens": 0}
+            for attempt in range(2):  # 2 attempts per round
+                try:
+                    w_resp, wu = self.worker(wp)
+                    break  # success — stop retrying
+                except Exception as e:
+                    if attempt == 0:
+                        self._log("WORKER r{}".format(r),
+                                  "Attempt 1 failed: {}. Retrying...".format(e))
+                        time.sleep(1)
+                    else:
+                        w_resp = (
+                            "[Worker failed after 2 attempts: {}. "
+                            "Answer from your own knowledge if possible.]".format(e)
+                        )
+            timings["w_r{}".format(r)] = time.time() - t
             w_tok += wu.get("prompt_tokens", 0) + wu.get("completion_tokens", 0)
             w_msgs.append({"question": question, "response": w_resp})
-            self._log(f"WORKER r{r}", w_resp)
+            self._log("WORKER r{}".format(r), w_resp)
 
             # Supervisor synthesizes
             remaining = rounds - r

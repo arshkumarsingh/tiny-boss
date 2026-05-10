@@ -35,7 +35,10 @@ class TestRetry:
         def flaky():
             counter["n"] += 1
             if counter["n"] < 3:
-                raise RuntimeError("fail")
+                # Simulate a rate limit error
+                err = Exception("rate limited")
+                err.status_code = 429
+                raise err
             return "recovered"
 
         result = _retry(flaky, max_attempts=3)
@@ -44,7 +47,18 @@ class TestRetry:
 
     def test_raises_after_exhausted(self):
         def always_fail():
-            raise RuntimeError("boom")
+            err = Exception("overloaded")
+            err.status_code = 503
+            raise err
 
-        with pytest.raises(RuntimeError, match="boom"):
+        with pytest.raises(Exception, match="overloaded"):
             _retry(always_fail, max_attempts=2)
+
+    def test_fails_fast_on_config_error(self):
+        def bad_auth():
+            # AuthenticationError is not transient
+            err = ValueError("invalid api key")
+            raise err
+
+        with pytest.raises(ValueError, match="invalid api key"):
+            _retry(bad_auth, max_attempts=3)
