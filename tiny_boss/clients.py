@@ -7,7 +7,7 @@ Auto-loads API keys from ~/.hermes/.env.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Generator
 
 # Auto-load Hermes .env so Hermes users don't need to export keys
 _ENV_FILE = Path.home() / ".hermes" / ".env"
@@ -74,7 +74,7 @@ class OpenAIClient(LLMClient):
         }
         return text, usage
 
-    def stream(self, prompt: str, system: str = "") -> "typing.Generator[str, None, None]":
+    def stream(self, prompt: str, system: str = "") -> "Generator[str, None, None]":
         """Yield tokens one at a time via streaming."""
         from openai import OpenAI
 

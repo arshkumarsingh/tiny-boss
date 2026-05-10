@@ -194,7 +194,6 @@ class Handler(BaseHTTPRequestHandler):
             if stream:
                 self._sse(self.proxy.chat_stream(messages), "tiny-boss", rid)
             else:
-                start = time.time()
                 answer = self.proxy.chat(messages)
 
                 self._json({
@@ -220,17 +219,17 @@ def main():
 
     Handler.proxy = BossProxy(args.worker, args.supervisor)
     server = HTTPServer((args.host, args.port), Handler)
-    print(f"\nListening on http://{args.host}:{args.port}", file=sys.stderr)
-    print(f"  GET  /health", file=sys.stderr)
-    print(f"  POST /v1/chat/completions  (stream=true supported)", file=sys.stderr)
-    print(f"\nAdd to ~/.hermes/config.yaml:", file=sys.stderr)
-    print(f"  tiny-boss:", file=sys.stderr)
-    print(f"    name: Tiny Boss", file=sys.stderr)
-    print(f"    base_url: http://{args.host}:{args.port}/v1", file=sys.stderr)
-    print(f"    api_key: no-key-needed", file=sys.stderr)
-    print(f"    provider: openai", file=sys.stderr)
-    print(f"    models:", file=sys.stderr)
-    print(f"      - tiny-boss", file=sys.stderr)
+    print("\nListening on http://{}:{}".format(args.host, args.port), file=sys.stderr)
+    print("  GET  /health", file=sys.stderr)
+    print("  POST /v1/chat/completions  (stream=true supported)", file=sys.stderr)
+    print("\nAdd to ~/.hermes/config.yaml:", file=sys.stderr)
+    print("  tiny-boss:", file=sys.stderr)
+    print("    name: Tiny Boss", file=sys.stderr)
+    print("    base_url: http://{}:{}/v1".format(args.host, args.port), file=sys.stderr)
+    print("    api_key: no-key-needed", file=sys.stderr)
+    print("    provider: openai", file=sys.stderr)
+    print("    models:", file=sys.stderr)
+    print("      - tiny-boss", file=sys.stderr)
 
     try:
         server.serve_forever()
