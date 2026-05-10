@@ -4,7 +4,7 @@
 
 A cost-saving protocol where a small (free) LLM processes your full context and a larger LLM asks targeted questions to synthesize the final answer. The expensive model never processes the long context.
 
-> [**View architecture diagram →**](tiny-boss-architecture.html) *(dark theme, opens in browser)*
+> [**View architecture diagram →**](https://htmlpreview.github.io/?https://github.com/arshkumarsingh/tiny-boss/blob/main/tiny-boss-architecture.html) *(dark theme, interactive)*
 
 Inspired by [HazyResearch/minions](https://github.com/HazyResearch/minions). No local GPU needed — both models run on cloud APIs.
 
