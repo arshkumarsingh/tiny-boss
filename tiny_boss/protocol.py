@@ -25,7 +25,8 @@ SUPERVISOR_INITIAL = """You are a supervisor. A worker LLM will process context 
 {task}
 </task>
 
-You have up to {max_rounds} rounds. Each round: you ask ONE clear question → worker answers → you synthesize.
+You may ask the worker up to {max_rounds} questions across the entire session.
+Each round: you ask ONE clear question → worker answers → you synthesize.
 
 Output JSON:
 {{

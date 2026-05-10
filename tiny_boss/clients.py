@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Generator
 
 # Auto-load Hermes .env so Hermes users don't need to export keys
+# Only loads *_API_KEY variables — ignores everything else
 _ENV_FILE = Path.home() / ".hermes" / ".env"
 if _ENV_FILE.exists():
     with open(_ENV_FILE) as f:
@@ -17,8 +18,9 @@ if _ENV_FILE.exists():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, _, val = line.partition("=")
-                key, val = key.strip(), val.strip().strip('"').strip("'")
-                if key and val and key not in os.environ:
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and val and key not in os.environ and key.endswith("_API_KEY"):
                     os.environ[key] = val
 
 
@@ -106,9 +108,8 @@ class OpenAIClient(LLMClient):
 class GeminiClient(LLMClient):
     """Google Gemini via google-generativeai SDK."""
 
-    def __init__(self, provider: str, model: str,
-                 api_key: Optional[str] = None):
-        super().__init__(provider, model)
+    def __init__(self, model: str, api_key: Optional[str] = None):
+        super().__init__("gemini", model)
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         if not self.api_key:
             raise ValueError(
@@ -158,8 +159,8 @@ class OpenRouterClient(OpenAIClient):
 class AnthropicClient(LLMClient):
     """Anthropic Claude via native SDK. Set ANTHROPIC_API_KEY."""
 
-    def __init__(self, provider: str, model: str, api_key: Optional[str] = None):
-        super().__init__(provider, model)
+    def __init__(self, model: str, api_key: Optional[str] = None):
+        super().__init__("anthropic", model)
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not self.api_key:
             raise ValueError(

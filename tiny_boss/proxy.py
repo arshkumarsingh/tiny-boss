@@ -25,7 +25,6 @@ import json
 import sys
 import time
 import uuid
-import threading
 import argparse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -41,42 +40,44 @@ class BossProxy:
         sp, sm = supervisor_spec.split("/", 1)
         self.worker = get_client(wp, wm)
         self.supervisor = get_client(sp, sm)
-        self._lock = threading.Lock()
-        print(f"Worker:     {self.worker}", file=sys.stderr)
-        print(f"Supervisor: {self.supervisor}", file=sys.stderr)
+        print("Worker:     {}".format(self.worker), file=sys.stderr)
+        print("Supervisor: {}".format(self.supervisor), file=sys.stderr)
 
     def _parse_messages(self, messages: list) -> tuple[str, str]:
-        system_parts, user_parts = [], []
+        """Extract task from last user message, context from all prior messages (including assistant)."""
+        context_parts = []
+        task = "Process."
+
         for msg in messages:
             content = msg.get("content", "")
             if isinstance(content, list):
                 content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-            (system_parts if msg.get("role") == "system" else user_parts).append(content)
+            role = msg.get("role", "user")
+            if role == "user":
+                task = content  # last user message wins
+            context_parts.append("{}: {}".format(role, content))
 
-        task = user_parts[-1] if user_parts else "Process."
-        context = "\n\n".join(system_parts + user_parts[:-1]) if len(user_parts) > 1 else (system_parts[0] if system_parts else "")
+        # All messages except the final user task become context
+        context = "\n".join(context_parts[:-1]) if len(context_parts) > 1 else (context_parts[0] if context_parts else "")
         return task, context or "No context."
 
     def chat(self, messages: list) -> str:
         task, context = self._parse_messages(messages)
-        with self._lock:
-            boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
-            result = boss(task=task, context=context)
+        boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
+        result = boss(task=task, context=context)
         return result.final_answer
 
     def chat_stream(self, messages: list):
-        """Run protocol, then stream the answer token-by-token (no extra API call)."""
+        """Run protocol, then stream the answer word-by-word (no extra API call)."""
         task, context = self._parse_messages(messages)
+        boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
+        result = boss(task=task, context=context)
 
-        with self._lock:
-            boss = TinyBoss(self.worker, self.supervisor, max_rounds=2)
-            result = boss(task=task, context=context)
-
-            # Yield the answer already produced by the protocol
-            # Break into word-sized chunks for a streaming feel
-            words = result.final_answer.split(" ")
-            for i, word in enumerate(words):
-                yield word + (" " if i < len(words) - 1 else "")
+        # Yield the answer already produced by the protocol
+        # Break into word-sized chunks for a streaming feel
+        words = result.final_answer.split(" ")
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -191,6 +192,11 @@ def main():
 
     Handler.proxy = BossProxy(args.worker, args.supervisor)
     server = HTTPServer((args.host, args.port), Handler)
+
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print("\n  WARNING: Binding to {}. Anyone on the network can use your API keys.".format(args.host), file=sys.stderr)
+        print("  Set TINY_BOSS_API_KEY and pass it as Authorization: Bearer <key>\n", file=sys.stderr)
+
     print("\nListening on http://{}:{}".format(args.host, args.port), file=sys.stderr)
     print("  GET  /health", file=sys.stderr)
     print("  POST /v1/chat/completions  (stream=true supported)", file=sys.stderr)
