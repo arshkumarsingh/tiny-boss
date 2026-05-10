@@ -124,7 +124,7 @@ class BossResult:
     final_answer: str
     supervisor_messages: list = field(default_factory=list)
     worker_messages: list = field(default_factory=list)
-    rounds_used: int = 0
+    worker_rounds_used: int = 0
     timing: dict = field(default_factory=dict)
     worker_tokens: int = 0
     supervisor_tokens: int = 0
@@ -170,6 +170,16 @@ class TinyBoss:
         context: str | list[str],
         max_rounds: Optional[int] = None,
     ) -> BossResult:
+        """
+        Run the protocol.
+
+        Args:
+            task: The question or instruction for the supervisor.
+            context: The full context for the worker to read.
+                     A string is used as-is. A list of strings is joined
+                     with double newlines (for multi-document input).
+            max_rounds: Override the instance's default max_rounds.
+        """
         rounds = max_rounds or self.max_rounds
         ctx = "\n\n".join(context) if isinstance(context, list) else context
 
@@ -220,7 +230,9 @@ class TinyBoss:
             w_resp, wu = None, {"prompt_tokens": 0, "completion_tokens": 0}
             for attempt in range(2):  # 2 attempts per round
                 try:
+                    t_call = time.time()
                     w_resp, wu = self.worker(wp)
+                    timings["w_r{}".format(r)] = time.time() - t_call
                     break  # success — stop retrying
                 except Exception as e:
                     if attempt == 0:
@@ -232,7 +244,7 @@ class TinyBoss:
                             "[Worker failed after 2 attempts: {}. "
                             "Answer from your own knowledge if possible.]".format(e)
                         )
-            timings["w_r{}".format(r)] = time.time() - t
+                        timings["w_r{}".format(r)] = time.time() - t
             w_tok += wu.get("prompt_tokens", 0) + wu.get("completion_tokens", 0)
             w_msgs.append({"question": question, "response": w_resp})
             self._log("WORKER r{}".format(r), w_resp)
@@ -264,7 +276,7 @@ class TinyBoss:
                 return BossResult(
                     final_answer=w_resp,
                     supervisor_messages=s_msgs, worker_messages=w_msgs,
-                    rounds_used=r,
+                    worker_rounds_used=r,
                     timing={"total": time.time() - t0, **timings},
                     worker_tokens=w_tok, supervisor_tokens=s_tok,
                     errors=[f"supervisor_r{r}: {e}"],
@@ -284,7 +296,7 @@ class TinyBoss:
                 return BossResult(
                     final_answer=answer,
                     supervisor_messages=s_msgs, worker_messages=w_msgs,
-                    rounds_used=r,
+                    worker_rounds_used=r,
                     timing={"total": time.time() - t0, **timings},
                     worker_tokens=w_tok, supervisor_tokens=s_tok,
                 )
@@ -294,7 +306,7 @@ class TinyBoss:
         return BossResult(
             final_answer=final,
             supervisor_messages=s_msgs, worker_messages=w_msgs,
-            rounds_used=rounds,
+            worker_rounds_used=rounds,
             timing={"total": time.time() - t0, **timings},
             worker_tokens=w_tok, supervisor_tokens=s_tok,
             errors=[f"max_rounds ({rounds}) exhausted"] if rounds > 1 else [],

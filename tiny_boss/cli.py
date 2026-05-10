@@ -33,8 +33,8 @@ def _load_config() -> dict:
             import tomli as tomllib
         except ImportError:
             return {"defaults": {}}
-    with open(CONFIG_FILE) as f:
-        return tomllib.loads(f.read())
+    with open(CONFIG_FILE, "rb") as f:
+        return tomllib.load(f)
 
 
 def _ensure_config():
@@ -188,7 +188,7 @@ Keys auto-loaded from ~/.hermes/.env
     if args.json:
         out = {
             "final_answer": result.final_answer,
-            "rounds_used": result.rounds_used,
+            "worker_rounds_used": result.worker_rounds_used,
             "timing": result.timing,
             "worker_tokens": result.worker_tokens,
             "supervisor_tokens": result.supervisor_tokens,
@@ -201,7 +201,7 @@ Keys auto-loaded from ~/.hermes/.env
         print(f"\n{'='*70}")
         print(result.final_answer)
         print(f"{'='*70}")
-        stats = (f"\n[{result.rounds_used} rounds, {result.timing['total']:.1f}s, "
+        stats = (f"\n[{result.worker_rounds_used} rounds, {result.timing['total']:.1f}s, "
                  f"w:{result.worker_tokens} tok, s:{result.supervisor_tokens} tok]")
         if result.errors:
             stats += f"  errors: {result.errors}"

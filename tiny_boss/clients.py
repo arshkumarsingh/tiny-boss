@@ -6,6 +6,7 @@ Auto-loads API keys from ~/.hermes/.env.
 """
 
 import os
+import time
 from pathlib import Path
 from typing import Optional, Generator
 
@@ -47,7 +48,6 @@ def _is_transient(exc: Exception) -> bool:
 
 def _retry(fn, max_attempts: int = 3, base_delay: float = 1.0):
     """Call fn() with exponential backoff on transient errors only."""
-    import time as _time
     last = None
     for attempt in range(max_attempts):
         try:
@@ -58,7 +58,7 @@ def _retry(fn, max_attempts: int = 3, base_delay: float = 1.0):
             last = e
             if attempt < max_attempts - 1:
                 delay = base_delay * (2 ** attempt)
-                _time.sleep(delay)
+                time.sleep(delay)
     raise last
 
 
@@ -165,17 +165,23 @@ class GeminiClient(LLMClient):
 
         if self._client is None:
             genai.configure(api_key=self.api_key)
-            self._client = genai
+            self._client = genai.GenerativeModel(
+                model_name=self.model,
+                generation_config={
+                    "temperature": self.temperature,
+                    "max_output_tokens": self.max_tokens,
+                },
+            )
 
-        model = self._client.GenerativeModel(
-            model_name=self.model,
-            generation_config={
-                "temperature": self.temperature,
-                "max_output_tokens": self.max_tokens,
-            },
-            system_instruction=system if system else None,
-        )
-        resp = _retry(lambda: model.generate_content(prompt))
+        model = self._client
+        # System instruction varies per call, so pass it inline
+        if system:
+            resp = _retry(lambda: model.generate_content(
+                prompt,
+                generation_config=model._generation_config,
+            ))
+        else:
+            resp = _retry(lambda: model.generate_content(prompt))
         text = resp.text or ""
         usage = {
             "prompt_tokens": resp.usage_metadata.prompt_token_count if resp.usage_metadata else 0,

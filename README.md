@@ -72,7 +72,7 @@ boss = TinyBoss(worker, supervisor, max_rounds=3)
 result = boss(task="Extract entities", context=open("doc.txt").read())
 
 print(result.final_answer)
-print(f"Rounds: {result.rounds_used}, Time: {result.timing['total']:.1f}s")
+print(f"Rounds: {result.worker_rounds_used}, Time: {result.timing['total']:.1f}s")
 ```
 
 ### API Keys
@@ -176,7 +176,7 @@ get_client("openai", "custom-model", base_url="https://api.example.com/v1")
 ```python
 boss = TinyBoss(worker, supervisor, max_rounds=3)
 result = boss(task="...", context="...")
-# result.final_answer, result.rounds_used, result.timing, ...
+# result.final_answer, result.worker_rounds_used, result.timing, ...
 ```
 
 ### `BossResult`
@@ -184,7 +184,7 @@ result = boss(task="...", context="...")
 | Field | Type | Description |
 |-------|------|-------------|
 | `final_answer` | `str` | The synthesized answer |
-| `rounds_used` | `int` | Number of worker/supervisor rounds |
+| `worker_rounds_used` | `int` | Number of worker/supervisor rounds |
 | `timing` | `dict` | Per-step timing in seconds |
 | `worker_tokens` | `int` | Total tokens used by worker |
 | `supervisor_tokens` | `int` | Total tokens used by supervisor |

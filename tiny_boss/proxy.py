@@ -57,8 +57,13 @@ class BossProxy:
                 task = content  # last user message wins
             context_parts.append("{}: {}".format(role, content))
 
-        # All messages except the final user task become context
-        context = "\n".join(context_parts[:-1]) if len(context_parts) > 1 else (context_parts[0] if context_parts else "")
+        # Build context from all messages except the final user task
+        if len(context_parts) > 1 and context_parts[-1].startswith("user:"):
+            context = "\n".join(context_parts[:-1])
+        elif len(context_parts) == 1:
+            context = ""
+        else:
+            context = "\n".join(context_parts)
         return task, context or "No context."
 
     def chat(self, messages: list) -> str:
@@ -194,8 +199,8 @@ def main():
     server = HTTPServer((args.host, args.port), Handler)
 
     if args.host not in ("127.0.0.1", "localhost", "::1"):
-        print("\n  WARNING: Binding to {}. Anyone on the network can use your API keys.".format(args.host), file=sys.stderr)
-        print("  Set TINY_BOSS_API_KEY and pass it as Authorization: Bearer <key>\n", file=sys.stderr)
+        print("\n  WARNING: Binding to {}. Anyone on the network can spend your API credits.".format(args.host), file=sys.stderr)
+        print("  Use a reverse proxy with authentication for production deployments.\n", file=sys.stderr)
 
     print("\nListening on http://{}:{}".format(args.host, args.port), file=sys.stderr)
     print("  GET  /health", file=sys.stderr)
