@@ -238,9 +238,13 @@ All scenarios use **Groq Llama 8B (free tier) + DeepSeek V4 Pro**. Pricing as of
 | Entity extraction | $3.74 | $0.70 | **$3.04** |
 | Log analysis | $8.87 | $0.52 | **$8.35** |
 
-## Savings across different supervisor models
+## Savings across different model combos
 
-Same scenario (summarize 12K-token paper). Worker is always Groq 8B (free tier).
+Same scenario: summarize a 12K-token paper (2 protocol rounds, 500 tok final output).
+
+### With a free worker (Groq Llama 8B)
+
+Worker costs nothing. Supervisor only sees ~1,500 tokens of distilled answers.
 
 | Supervisor | Pricing (per M tok) | Direct cost | Tiny Boss cost | Savings |
 |------------|-------------------|------------|---------------|---------|
@@ -250,7 +254,21 @@ Same scenario (summarize 12K-token paper). Worker is always Groq 8B (free tier).
 
 The more expensive your supervisor, the more Tiny Boss saves. With GPT-5.5 at scale (1,000 papers/month): $75.00 → $22.50, saving $52.50/month.
 
-> **Pricing sources (May 2026):** [DeepSeek](https://api-docs.deepseek.com/quick_start/pricing) (V4 Pro: 75% intro discount until May 31), [OpenAI](https://openai.com/api/pricing/) (GPT-5.5: Apr 2026), [Anthropic](https://www.anthropic.com/pricing) (Sonnet 4.6). Groq free tier: 30 RPM, 500K tokens/day — [limits](https://console.groq.com/settings/limits).
+### All-Claude stack (Opus 4.7 supervisor)
+
+For teams locked into the Anthropic ecosystem. Worker isn't free, but Opus never reads the full context.
+
+| Worker | Worker cost | Supervisor cost | Total | vs Direct Opus |
+|--------|-----------|----------------|-------|----------------|
+| — *(direct)* | — | Opus 4.7: 12K in + 500 out | **$0.073** | — |
+| **Sonnet 4.6** ($3/$15) | 12K in + 400 out = $0.042 | Opus: 1.5K in + 500 out = $0.020 | **$0.062** | **14%** save |
+| **Haiku 4.5** ($1/$5) | 12K in + 400 out = $0.014 | Opus: 1.5K in + 500 out = $0.020 | **$0.034** | **53%** save |
+
+> **Pick the cheapest worker that can do the job.** Haiku handles extraction fine; Sonnet if the worker needs more reasoning. Free workers (Groq, Gemini Flash) give the best margins — 70–81%.
+
+> **The pattern:** free workers (Groq, Gemini Flash) give the biggest savings. Paid workers still help — the expensive supervisor avoids reading the full context — but the worker's own cost eats into the margin. Pick the cheapest worker that can do the job.
+
+> **Pricing sources (May 2026):** [DeepSeek](https://api-docs.deepseek.com/quick_start/pricing) (V4 Pro: 75% intro discount until May 31), [OpenAI](https://openai.com/api/pricing/) (GPT-5.5: Apr 2026), [Anthropic](https://platform.claude.com/docs/en/about-claude/pricing) (Opus 4.7: $5/$25, Sonnet 4.6: $3/$15, Haiku 4.5: $1/$5). Groq free tier: 30 RPM, 500K tokens/day — [limits](https://console.groq.com/settings/limits).
 
 > **What about after the discount?** DeepSeek V4 Pro's regular pricing ($1.74/M input, $3.48/M output) would make savings even larger — 85–95% per run. The worker (Groq) has a generous free tier (30 requests/min, 500K tokens/day). You'll hit the free tier ceiling at ~40 paper summaries per day — well beyond individual use.
 
