@@ -4,19 +4,7 @@
 
 A cost-saving protocol where a small (free) LLM processes your full context and a larger LLM asks targeted questions to synthesize the final answer. The expensive model never processes the long context.
 
-```
-  ┌──────────────────┐
-  │   SUPERVISOR     │  "What's the methodology?"
-  │   (smart LLM)    │  "Got it. And the results?"
-  │   DeepSeek V4    │  → synthesizes final answer
-  └──────┬───────▲───┘
-    asks  │       │  answers
-  ┌──────▼───────┴───┐
-  │     WORKER       │
-  │   (cheap LLM)    │  Reads entire document.
-  │   Groq 8B (free) │  Answers supervisor's questions.
-  └──────────────────┘
-```
+> [**View architecture diagram →**](tiny-boss-architecture.html) *(dark theme, opens in browser)*
 
 Inspired by [HazyResearch/minions](https://github.com/HazyResearch/minions). No local GPU needed — both models run on cloud APIs.
 
