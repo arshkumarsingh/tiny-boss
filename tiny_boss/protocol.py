@@ -244,7 +244,7 @@ class TinyBoss:
                             "[Worker failed after 2 attempts: {}. "
                             "Answer from your own knowledge if possible.]".format(e)
                         )
-                        timings["w_r{}".format(r)] = time.time() - t
+                        timings["w_r{}".format(r)] = time.time() - t_call
             w_tok += wu.get("prompt_tokens", 0) + wu.get("completion_tokens", 0)
             w_msgs.append({"question": question, "response": w_resp})
             self._log("WORKER r{}".format(r), w_resp)
