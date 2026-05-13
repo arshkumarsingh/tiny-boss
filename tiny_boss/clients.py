@@ -173,15 +173,19 @@ class GeminiClient(LLMClient):
                 },
             )
 
-        model = self._client
-        # System instruction varies per call, so pass it inline
+        # System instruction varies per call — create fresh model when needed
         if system:
-            resp = _retry(lambda: model.generate_content(
-                prompt,
-                generation_config=model._generation_config,
-            ))
+            model = genai.GenerativeModel(
+                model_name=self.model,
+                generation_config={
+                    "temperature": self.temperature,
+                    "max_output_tokens": self.max_tokens,
+                },
+                system_instruction=system,
+            )
         else:
-            resp = _retry(lambda: model.generate_content(prompt))
+            model = self._client
+        resp = _retry(lambda: model.generate_content(prompt))
         text = resp.text or ""
         usage = {
             "prompt_tokens": resp.usage_metadata.prompt_token_count if resp.usage_metadata else 0,
